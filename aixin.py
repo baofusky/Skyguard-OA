@@ -13,20 +13,9 @@ from Crypto.Util.Padding import pad
 import base64
 
 # 初始化会话状态
-if 'file_content_public' not in st.session_state:
-    st.session_state['file_content_public'] = {"content": "", "filename": "", "uploaded_at": ""}
 
 if 'token_info' not in st.session_state:
     st.session_state['token_info'] = {"client-id": "", "access-token": ""}
-
-if 'ucwi_credentials' not in st.session_state:
-    st.session_state['ucwi_credentials'] = {
-        "ip_address": "",
-        "port": "",
-        "app_id": "",
-        "access_key": "",
-        "secret_key": ""
-    }
 
 if 'ucss_credentials' not in st.session_state:
     st.session_state['ucss_credentials'] = {
@@ -37,15 +26,26 @@ if 'ucss_credentials' not in st.session_state:
         "password": ""
     }
 
-if 'http_response' not in st.session_state:
-    st.session_state['http_response'] = ""
+if 'file_info' not in st.session_state:
+    st.session_state['file_info'] = {
+        "approver": "",
+        "submitter_ip":"",
+        "submitter_name": "",
+        "submitter_email": "",
+        "submitter_fqdn": "",
+        "file_size": "",
+        "file_md5": "",
+        "file_name": "",
+        "approved_time": "",
+        "expired_time": "",
+        "max_num": "",
+        "forensic": "",
+        "channel":""
+    }
 
-if 'incident_info' not in st.session_state:
-    st.session_state['incident_info'] = ""
-
-if 'action_code' not in st.session_state:
-    st.session_state['action_code'] = ""
-
+def translatetout(normaltime):
+    timeArray = time.strptime(normaltime,"%Y-%m-%d %H:%M:%S")
+    timeStamp = int(time.mktime(timeArray))
 
 def checkin():
     key = st.session_state['ucss_credentials']['microservice_key'].encode('utf-8')
@@ -93,9 +93,8 @@ def checkin():
         return ""
 
 
-
-
 def ucss_credentials_form():
+    st.write("请先在[UCSS信息]界面填写UCSS信息，并保存UCSS信息后，再checkin,正常checkin之后再切到[文件审批信息]界面填写文件审批信息，之后保存后再提交审批")
     st.header("请提供UCSS的IP地址和账号和密码")
 
     ip_address = st.text_input("IP地址", value=st.session_state['ucss_credentials']['ip_address'])
@@ -116,10 +115,14 @@ def ucss_credentials_form():
         st.success("UCSS信息已保存")
 
     if st.button("Checkin"):
-        checkin()
+        if st.session_state['ucss_credentials']['ip_address'] == "" or st.session_state['ucss_credentials']['port'] == "" or st.session_state['ucss_credentials']['password']== "" or st.session_state['ucss_credentials']['microservice_key']== "":
+            st.write("信息填写不全，请重新检查，填写完整信息后,点[保存UCSS信息后]再chec-kin")
+        else:
+            checkin()
 
 
 def file_info_form():
+    st.write("请先填写文件审批需要的信息，然后点保存之后再提交审批，审批成功之后，请到UCSS--监控--DLP监控--审批记录，查询审批记录")
     st.header("请提供文件审批用的详细信息")
     options = ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24","25","26","27","28","29","30"]
     approver = st.text_input("审批人(必写)", value="admin")
@@ -135,6 +138,11 @@ def file_info_form():
     submitter_fqdn = st.text_input("机器的FQDN")
     channel = st.multiselect("请选择通道",options,default=["1","2","3","4","5","6"])
     forensic = st.number_input("是否记录证据", value=1)
+    d1='{}'.format(approved_time)
+    d11=translatetout(d1)
+    d2='{}'.format(expired_time)
+    d22=translatetout(d2)
+
 
     if st.button("查看通道列表"):
         st.write("""     
@@ -170,190 +178,65 @@ def file_info_form():
     30	HTTPS（移动）
     """)
     if st.button("保存信息"):
-        pass
-
+        st.session_state['file_info'] = {
+            "approver": approver,
+            "submitter_name": submitter_name,
+            "submitter_ip":submitter_ip,
+            "submitter_email": submitter_email,
+            "submitter_fqdn": submitter_fqdn,
+            "file_size": file_size,
+            "file_md5":file_md5,
+            "file_name": file_name,
+            "approved_time": d11,
+            "expired_time": d22,
+            "max_num": max_num,
+            "forensic":forensic,
+            "channel":channel
+        }
+        st.success("文件信息已保存")
     if st.button("提交审批"):
-        pass
 
-def get_auth(access_key, secret_key, timestamp):
-    token_source = secret_key + timestamp
-    token = hmac.new(
-        secret_key.encode('utf-8'),
-        token_source.encode('utf-8'),
-        hashlib.sha256).hexdigest()
-    return "SKG {0}:{1}".format(access_key, token)
+        requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+        url = f"https://{st.session_state['ucss_credentials']['ip_address']}:{st.session_state['ucss_credentials']['port']}/qkact/v1/dlp/incident/approval"
+        clientId = st.session_state['token_info']['client-id']
+        accessToken = st.session_state['token_info']['access-token']
+        auth_base64 = base64.b64encode("{}:{}".format(clientId, accessToken).encode("utf-8")).decode("utf-8")
+        auth = "Basic {}".format(auth_base64)
+        headers = {
+            "Authorization": auth,
+            "User-Agent": "QKAct-External-Client",
+            "Content-Type": "application/json",
+        }
+        body = {
+            "data": [{
+                "approver": approver,
+                "submitter_name": submitter_name,
+                "submitter_ip": submitter_ip,
+                "submitter_email": submitter_email,
+                "submitter_fqdn": submitter_fqdn,
+                "file_size": file_size,
+                "file_md5": file_md5,
+                "file_name": file_name,
+                "approved_time": d11,
+                "expired_time": d22,
+                "max_num": max_num,
+                "forensic": forensic,
+                "channel": channel
+            }]
+        }
+        try:
+            response = requests.post(url, headers=headers, json=body, verify=False)
+            response.raise_for_status()
+            response_json = response.json()
+            st.write(response_json)
+            if response_json['reason'] == "Success":
+                st.write(f"已经正常提交审批，请去{st.session_state['ucss_credentials']['ip_address']}查看审批记录")
 
-
-def get_headers():
-    timestamp = "{0:.0f}".format(time.time())
-    auth = get_auth(
-        st.session_state['ucwi_credentials']['access_key'],
-        st.session_state['ucwi_credentials']['secret_key'],
-        timestamp)
-
-    headers = {
-        "X-Skg-Timestamp": timestamp,
-        "authorization": auth,
-    }
-    return headers
-
-
-def send_to_ucwi(file_content, filename):
-    requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
-    url = f"https://{st.session_state['ucwi_credentials']['ip_address']}:{st.session_state['ucwi_credentials']['port']}/skg/v1/dlp/channel/cloudapp/{st.session_state['ucwi_credentials']['app_id']}/sync"
-    # print(url)
-    headers = get_headers()
-    metadata = {
-        "user": "cnsec_jizhiming",
-        # "filename": "mimi.txt",
-        "queryID": str(uuid.uuid4()),
-        # "md5": "e569660a0bc41a34d7d7aa12cb29feac",
-        "operation": 1,
-        # "antivirus": True,
-        # "encoding": "UTF-8",
-    }
-    data = {"metadata": json.dumps(metadata)}
-
-    # 将文件内容转换为BytesIO对象，模拟文件上传
-    # file_like_object = io.BytesIO(file_content.encode('utf-8'))
-    files = {'request': (filename, file_content, 'text/plain')}  # 文件名，文件内容，MIME类型
-
-    try:
-        response = requests.post(url, data=data, headers=headers, files=files, verify=False)
-        response.raise_for_status()
-        return response.text
-    except requests.RequestException as e:
-        st.error(f"请求UCWI时发生错误,未正常响应: {e}")
-        return ""
-
-
-def process_http_response(response_text):
-    try:
-        response_json = json.loads(response_text)
-        incident_info = response_json.get("incident_info")
-        st.session_state['incident_info'] = incident_info
-        # print(incident_info)
-
-        # if incident_info is None:
-        if len(incident_info) == 0:
-            st.success("UCWI：外发文件无敏感内容")
-            # 直接COPY文件到公开区域的逻辑应在此处实现，但基于现有代码结构，该部分逻辑已在update_public_content中处理。
-
-        else:
-            # 增加风险分析展示区域
-            st.warning("UCWI：外发文件存在敏感内容，触发策略")
-
-            action_code = response_json.get("actionCode")
-            st.session_state['action_code'] = action_code
-            policy_name = incident_info.get("matchedPolicies")[0]["name"]
-            severity = incident_info.get("matchedPolicies")[0]["severity"]
-            if severity == 1:
-                severity = "高"
-            elif severity == 2:
-                severity = "中"
-            elif severity == 3:
-                severity = "低"
-            elif severity == 4:
-                severity = "信息"
-
-            actionSettingName = incident_info.get("matchedPolicies")[0]["actionSettingName"]
-            numberOfMatches = incident_info.get("matchedPolicies")[0]["numberOfMatches"]
-            st.write(f"- 策略名称: {policy_name}")
-            st.write(f"- 策略安全等级: {severity}")
-            st.write(f"- 策略动作: {actionSettingName}")
-            st.write(f"- 命中规则数: {numberOfMatches}")
-
-            # if strategy_name:
-            # st.write(f"- 策略名称: {strategy_name}")
-            # st.write(f"- 策略危险等级: {severity}")
-
-            if action_code == 2:
-                st.error("文件中转系统：外发文件存在敏感内容，禁止发送")
-            elif action_code == 1:
-                st.warning("文件中转系统：外发文件可能存在风险，外发动作已被平台审计")
-
-            # 实现存储策略到下拉框的逻辑需要前端界面的调整，此处简化处理仅展示信息。
-
-    except json.JSONDecodeError:
-        st.error("无法解析UCWI的响应为JSON格式")
-
-
-def update_public_content(file_content, filename):
-    """更新公开区域的文件内容，如果UCWI认证信息完整则同时发送到UCWI"""
-    # 更新公开区域的文件内容
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    st.session_state['file_content_public'] = {
-        "content": file_content,
-        "filename": filename,
-        "uploaded_at": now
-    }
-
-    # 检查ucwi_credentials是否全部填写
-    if all(st.session_state['ucwi_credentials'].values()):
-        response_text = send_to_ucwi(file_content, filename)
-        st.session_state['http_response'] = response_text
-
-        process_http_response(response_text)
-
-        if not st.session_state['incident_info'] or st.session_state['action_code'] == 1:
-            # st.success("内容已上传到公开区域并发送至UCWI:外发文件无敏感内容")
-            st.success("文件流转系统：内容已上传到公开区域")
-        else:
-            st.session_state['file_content_public'] = {
-                "content": '',
-                "filename": '',
-                "uploaded_at": ''
-            }
-
-    else:
-        st.success("内容已上传到公开区域")
-
-
-def private_area():
-    st.header("内部区域")
-
-    uploaded_file = st.file_uploader("上传TXT文件", type=['txt'])
-
-    if uploaded_file is not None:
-        file_content = uploaded_file.read().decode('utf-8')
-        st.text_area("文件预览", value=file_content, height=300)
-        filename = uploaded_file.name
-
-        if st.button("上传到公开区域"):
-            update_public_content(file_content, filename)
-
-            # 如果UCWI认证信息未填写完整，这部分不进行显示
-            if all(st.session_state['ucwi_credentials'].values()):
-                # 构造HTTP请求的展示文本
-                request_details = (
-                    f"URL: https://{st.session_state['ucwi_credentials']['ip_address']}:{st.session_state['ucwi_credentials']['port']}\n"
-                    f"Method: POST\n"
-                    f"Headers:\n"
-                    f"  - access_key: {st.session_state['ucwi_credentials']['access_key']}\n"
-                    f"  - secret_key: {st.session_state['ucwi_credentials']['secret_key']}\n"
-                    f"Payload:\n"
-                    f"  - filename: {filename}\n"
-                    f"  - content: {file_content[:50]}... (truncated for preview)"
-                )
-
-                # 使用expander组件创建一个可折叠的HTTP请求展示区域
-                with st.expander("HTTP Requests", expanded=False):
-                    st.code(request_details, language='plaintext')
-
-                with st.expander("HTTP Response", expanded=False):
-                    st.code(st.session_state['http_response'], language='plaintext')
-
-
-def public_area():
-    st.header("公开区域")
-
-    content_info = st.session_state['file_content_public']
-
-    if content_info["content"]:
-        st.write(f"**文件名:** {content_info['filename']}")
-        st.write(f"**上传时间:** {content_info['uploaded_at']}")
-        st.text_area("文件内容预览", value=content_info["content"], height=300)
-
+        except requests.RequestException as e:
+            st.error(f"checkin的时候发生错误: {e}")
+            st.write(username)
+            st.write(base64_ciphertext)
+            return ""
 
 def login():
     """用户认证函数"""
