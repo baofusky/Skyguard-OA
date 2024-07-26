@@ -11,8 +11,8 @@ import io
 from Crypto.Cipher import DES3
 from Crypto.Util.Padding import pad
 import base64
+import os
 
-# 初始化会话状态
 
 if 'token_info' not in st.session_state:
     st.session_state['token_info'] = {"client-id": "", "access-token": ""}
@@ -43,9 +43,13 @@ if 'file_info' not in st.session_state:
         "channel":""
     }
 
+
+
+
 def translatetout(normaltime):
     timeArray = time.strptime(normaltime,"%Y-%m-%d %H:%M:%S")
     timeStamp = int(time.mktime(timeArray))
+    return timeStamp
 
 def checkin():
     key = st.session_state['ucss_credentials']['microservice_key'].encode('utf-8')
@@ -123,15 +127,28 @@ def ucss_credentials_form():
 
 def file_info_form():
     st.write("请先填写文件审批需要的信息，然后点保存之后再提交审批，审批成功之后，请到UCSS--监控--DLP监控--审批记录，查询审批记录")
+    uploaded_file = st.file_uploader("请选择文件上传", type=['txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif'])
+    if uploaded_file is not None:
+        st.session_state['file_info']['file_name'] = uploaded_file.name
+
+        # 计算文件大小（Byte）
+        file_size_bytes = len(uploaded_file.getvalue())
+        st.session_state['file_info']['file_size'] = file_size_bytes
+        hash_md5 = hashlib.md5()
+        for chunk in iter(lambda: uploaded_file.read(4096), b""):
+            hash_md5.update(chunk)
+        st.session_state['file_info']['file_md5'] = hash_md5.hexdigest()
+
+
     st.header("请提供文件审批用的详细信息")
     options = ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24","25","26","27","28","29","30"]
     approver = st.text_input("审批人(必写)", value="admin")
     submitter_name = st.text_input("提交人")
     submitter_ip = st.text_input("提交人IP", value="192.168.0.2")
     submitter_email = st.text_input("提交人邮箱", value="user1@test.com")
-    file_size = st.text_input("文件大小-单位B,不能为空")
-    file_md5 = st.text_input("文件md5(必写)")
-    file_name = st.text_input("文件名")
+    file_size = st.text_input("文件大小-单位B,不能为空",value=st.session_state['file_info']['file_size'])
+    file_md5 = st.text_input("文件md5(必写)",value=st.session_state['file_info']['file_md5'])
+    file_name = st.text_input("文件名",value=st.session_state['file_info']['file_name'])
     approved_time = st.text_input("审批时间", value="2024-07-25 13:00:00")
     expired_time = st.text_input("审批过期时间", value="2024-07-25 13:00:00")
     max_num = st.number_input("最大通过次数",value=3)
@@ -234,8 +251,6 @@ def file_info_form():
 
         except requests.RequestException as e:
             st.error(f"checkin的时候发生错误: {e}")
-            st.write(username)
-            st.write(base64_ciphertext)
             return ""
 
 def login():
